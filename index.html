@@ -32,7 +32,10 @@
   .droparea{
     border:1px dashed var(--border); border-radius:8px; padding:14px; margin-top:8px;
     color:var(--muted); font-size:13px; text-align:center; background:var(--panel2);
-    cursor:text;
+    cursor:text; transition:background .15s, border-color .15s;
+  }
+  .droparea.dragover{
+    background:var(--panel); border-color:var(--accent); color:var(--text);
   }
   .droparea img{max-width:100%; border-radius:6px; margin-top:8px; display:block;}
   button{
@@ -65,7 +68,7 @@
     <h2>① 相手のメッセージ</h2>
     <textarea id="incomingText" placeholder="ここにテキストを貼り付ける（例: Hola, ¿quieres ir a la cueva?）"></textarea>
     <div class="droparea" id="dropArea" tabindex="0">
-      ここをクリックしてから Cmd+V / Ctrl+V で貼り付け（ページ内どこでも貼り付け可）
+      ここをクリックしてから Cmd+V / Ctrl+V で貼り付け、またはスクリーンショットをここにドラッグ&ドロップ
       <div id="imgPreview"></div>
     </div>
     <div class="row">
@@ -278,6 +281,39 @@ document.addEventListener('paste', (e) => {
 
 // allow clicking the droparea to focus so paste works
 dropArea.addEventListener('click', () => dropArea.focus());
+
+// Drag & drop support
+['dragenter', 'dragover'].forEach((evtName) => {
+  dropArea.addEventListener(evtName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropArea.classList.add('dragover');
+  });
+});
+['dragleave', 'dragend'].forEach((evtName) => {
+  dropArea.addEventListener(evtName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropArea.classList.remove('dragover');
+  });
+});
+dropArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropArea.classList.remove('dragover');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const imageFile = Array.from(files).find((f) => f.type.indexOf('image') !== -1);
+  if (imageFile) {
+    processImageBlob(imageFile);
+  } else {
+    ocrTextDisplay.textContent = '画像ファイルをドロップしてください。';
+  }
+});
+// Prevent the browser from navigating away if a file is dropped outside the drop area
+['dragover', 'drop'].forEach((evtName) => {
+  window.addEventListener(evtName, (e) => e.preventDefault());
+});
 
 // Fallback: explicit "paste from clipboard" button using the async Clipboard API
 // (works in Chrome/Edge without needing a prior click+Cmd+V; needs permission).
