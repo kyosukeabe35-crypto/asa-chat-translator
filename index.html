@@ -40,7 +40,7 @@
     padding:10px 16px; font-size:14px; cursor:pointer; font-weight:600;
   }
   button:hover{filter:brightness(1.1);}
-  button.secondary{background:var(--panel2); border:1px solid var(--border); color:var(--text);}
+  button.secondary, .secondary{background:var(--panel2); border:1px solid var(--border); color:var(--text);}
   button.copy{background:var(--accent2);}
   button:disabled{opacity:.5; cursor:not-allowed;}
   .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;}
@@ -65,8 +65,15 @@
     <h2>① 相手のメッセージ</h2>
     <textarea id="incomingText" placeholder="ここにテキストを貼り付ける（例: Hola, ¿quieres ir a la cueva?）"></textarea>
     <div class="droparea" id="dropArea" tabindex="0">
-      ここをクリックしてスクリーンショットを貼り付け（Cmd+V / Ctrl+V）
+      ここをクリックしてから Cmd+V / Ctrl+V で貼り付け（ページ内どこでも貼り付け可）
       <div id="imgPreview"></div>
+    </div>
+    <div class="row">
+      <button class="secondary" id="clipboardBtn" type="button">📋 クリップボードから画像を貼り付け</button>
+      <label class="secondary" style="display:inline-flex;align-items:center;padding:10px 16px;border-radius:8px;cursor:pointer;">
+        📁 画像ファイルを選択
+        <input type="file" id="fileInput" accept="image/*" style="display:none;">
+      </label>
     </div>
     <div class="ocr-text" id="ocrTextDisplay"></div>
     <div class="row">
@@ -234,29 +241,36 @@ const dropArea = $('dropArea');
 const imgPreview = $('imgPreview');
 const ocrTextDisplay = $('ocrTextDisplay');
 
-dropArea.addEventListener('paste', async (e) => {
+async function processImageBlob(blob) {
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    pastedImageDataUrl = ev.target.result;
+    imgPreview.innerHTML = `<img src="${pastedImageDataUrl}" alt="pasted screenshot">`;
+    ocrTextDisplay.textContent = 'OCR実行中...（数秒かかります）';
+    try {
+      const { data: { text } } = await Tesseract.recognize(pastedImageDataUrl, 'spa+eng');
+      const cleaned = text.trim();
+      ocrTextDisplay.textContent = 'OCR結果: ' + (cleaned || '(文字を検出できませんでした)');
+      if (cleaned) {
+        $('incomingText').value = cleaned;
+      }
+    } catch (err) {
+      ocrTextDisplay.textContent = 'OCRエラー: ' + err.message + '（テキスト貼り付けをご利用ください）';
+    }
+  };
+  reader.readAsDataURL(blob);
+}
+
+// Listen for paste anywhere on the page (more reliable than a single element,
+// since some browsers don't fire "paste" on a plain focusable div).
+document.addEventListener('paste', (e) => {
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
   for (const item of items) {
     if (item.type.indexOf('image') !== -1) {
       const blob = item.getAsFile();
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        pastedImageDataUrl = ev.target.result;
-        imgPreview.innerHTML = `<img src="${pastedImageDataUrl}" alt="pasted screenshot">`;
-        ocrTextDisplay.textContent = 'OCR実行中...（数秒かかります）';
-        try {
-          const { data: { text } } = await Tesseract.recognize(pastedImageDataUrl, 'spa+eng');
-          const cleaned = text.trim();
-          ocrTextDisplay.textContent = 'OCR結果: ' + (cleaned || '(文字を検出できませんでした)');
-          if (cleaned) {
-            $('incomingText').value = cleaned;
-          }
-        } catch (err) {
-          ocrTextDisplay.textContent = 'OCRエラー: ' + err.message + '（テキスト貼り付けをご利用ください）';
-        }
-      };
-      reader.readAsDataURL(blob);
+      processImageBlob(blob);
+      e.preventDefault();
       break;
     }
   }
@@ -264,6 +278,35 @@ dropArea.addEventListener('paste', async (e) => {
 
 // allow clicking the droparea to focus so paste works
 dropArea.addEventListener('click', () => dropArea.focus());
+
+// Fallback: explicit "paste from clipboard" button using the async Clipboard API
+// (works in Chrome/Edge without needing a prior click+Cmd+V; needs permission).
+$('clipboardBtn').addEventListener('click', async () => {
+  try {
+    const items = await navigator.clipboard.read();
+    let found = false;
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        await processImageBlob(blob);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      ocrTextDisplay.textContent = 'クリップボードに画像が見つかりませんでした。先にスクリーンショットをコピーしてください。';
+    }
+  } catch (err) {
+    ocrTextDisplay.textContent = 'クリップボードを読み取れませんでした（' + err.message + '）。下の「画像ファイルを選択」もお試しください。';
+  }
+});
+
+// Fallback: pick an image file directly
+$('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) processImageBlob(file);
+});
 </script>
 </body>
 </html>
