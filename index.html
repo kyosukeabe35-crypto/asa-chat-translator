@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASA Chat Translator</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#1a1d24; --panel2:#20242e; --border:#2c303a;
+    --text:#e8e9ec; --muted:#9aa0ac; --accent:#4f8cff; --accent2:#2fbf71;
+    --danger:#e5534b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Segoe UI",sans-serif;
+    background:var(--bg); color:var(--text); padding:24px; line-height:1.5;
+  }
+  h1{font-size:20px; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:20px;}
+  .container{max-width:720px; margin:0 auto;}
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:16px; margin-bottom:16px;
+  }
+  .card h2{font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; letter-spacing:.02em;}
+  textarea{
+    width:100%; min-height:70px; background:var(--panel2); color:var(--text);
+    border:1px solid var(--border); border-radius:8px; padding:10px; font-size:14px;
+    resize:vertical; font-family:inherit;
+  }
+  textarea:focus, .droparea:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .droparea{
+    border:1px dashed var(--border); border-radius:8px; padding:14px; margin-top:8px;
+    color:var(--muted); font-size:13px; text-align:center; background:var(--panel2);
+    cursor:text;
+  }
+  .droparea img{max-width:100%; border-radius:6px; margin-top:8px; display:block;}
+  button{
+    background:var(--accent); color:#fff; border:none; border-radius:8px;
+    padding:10px 16px; font-size:14px; cursor:pointer; font-weight:600;
+  }
+  button:hover{filter:brightness(1.1);}
+  button.secondary{background:var(--panel2); border:1px solid var(--border); color:var(--text);}
+  button.copy{background:var(--accent2);}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;}
+  .result{
+    background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    padding:12px; font-size:15px; min-height:24px; white-space:pre-wrap;
+  }
+  .toggle-group{display:flex; gap:8px;}
+  .toggle-group button{background:var(--panel2); border:1px solid var(--border); color:var(--text);}
+  .toggle-group button.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .status{font-size:12px; color:var(--muted); margin-top:6px; min-height:16px;}
+  .ocr-text{margin-top:8px; font-size:13px; color:var(--muted);}
+  .flash{color:var(--accent2); font-weight:600;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎮 ASA Chat Translator</h1>
+  <div class="sub">相手のメッセージを理解して、日本語で返信をスペイン語/英語にして貼り付ける</div>
+
+  <div class="card">
+    <h2>① 相手のメッセージ</h2>
+    <textarea id="incomingText" placeholder="ここにテキストを貼り付ける（例: Hola, ¿quieres ir a la cueva?）"></textarea>
+    <div class="droparea" id="dropArea" tabindex="0">
+      ここをクリックしてスクリーンショットを貼り付け（Cmd+V / Ctrl+V）
+      <div id="imgPreview"></div>
+    </div>
+    <div class="ocr-text" id="ocrTextDisplay"></div>
+    <div class="row">
+      <button id="translateInBtn">日本語に翻訳</button>
+      <span class="status" id="inStatus"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② 日本語訳</h2>
+    <div class="result" id="jaResult">（ここに日本語訳が表示されます）</div>
+  </div>
+
+  <div class="card">
+    <h2>③ 返信を日本語で入力</h2>
+    <textarea id="replyText" placeholder="例: うん、行こう。準備ができたら教えて"></textarea>
+    <h2 style="margin-top:14px;">④ 翻訳先</h2>
+    <div class="toggle-group">
+      <button id="langEs" class="active">🇪🇸 スペイン語</button>
+      <button id="langEn">🇬🇧 英語</button>
+    </div>
+    <div class="row">
+      <button id="translateOutBtn">翻訳してコピー</button>
+      <span class="status" id="outStatus"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⑤ 翻訳結果</h2>
+    <div class="result" id="resultText">（ここに翻訳結果が表示されます）</div>
+    <div class="row">
+      <button class="copy" id="copyBtn">コピー</button>
+      <span class="status" id="copyStatus"></span>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+let targetLang = 'es'; // es or en
+let pastedImageDataUrl = null;
+
+const $ = (id) => document.getElementById(id);
+
+// ---- Language toggle ----
+$('langEs').addEventListener('click', () => {
+  targetLang = 'es';
+  $('langEs').classList.add('active');
+  $('langEn').classList.remove('active');
+});
+$('langEn').addEventListener('click', () => {
+  targetLang = 'en';
+  $('langEn').classList.add('active');
+  $('langEs').classList.remove('active');
+});
+
+// ---- Translation via MyMemory API ----
+async function translate(text, sourceLang, targetLangCode) {
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLangCode}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('翻訳APIエラー: ' + res.status);
+  const data = await res.json();
+  if (!data.responseData || !data.responseData.translatedText) {
+    throw new Error('翻訳結果が取得できませんでした');
+  }
+  return data.responseData.translatedText;
+}
+
+// MyMemory needs a source lang guess; try 'es' first (ASA仲間はスペイン語がメイン), fallback auto not supported well,
+// so we just try es->ja, and if result looks identical to input (untranslated), retry with en->ja.
+async function translateIncomingToJapanese(text) {
+  try {
+    let result = await translate(text, 'es', 'ja');
+    if (result.trim().toLowerCase() === text.trim().toLowerCase()) {
+      // probably not spanish, retry as english
+      result = await translate(text, 'en', 'ja');
+    }
+    return result;
+  } catch (e) {
+    // fallback: try english directly
+    return await translate(text, 'en', 'ja');
+  }
+}
+
+// ---- ① Incoming message -> Japanese ----
+$('translateInBtn').addEventListener('click', async () => {
+  const text = ($('incomingText').value || '').trim();
+  const inStatus = $('inStatus');
+  const jaResult = $('jaResult');
+  if (!text) {
+    inStatus.textContent = 'テキストを入力するかスクリーンショットを貼り付けてください';
+    inStatus.style.color = '#e5534b';
+    return;
+  }
+  inStatus.textContent = '翻訳中...';
+  inStatus.style.color = '';
+  $('translateInBtn').disabled = true;
+  try {
+    const ja = await translateIncomingToJapanese(text);
+    jaResult.textContent = ja;
+    inStatus.textContent = '✓ 翻訳完了';
+    inStatus.className = 'status flash';
+  } catch (e) {
+    inStatus.textContent = 'エラー: ' + e.message;
+    inStatus.style.color = '#e5534b';
+  } finally {
+    $('translateInBtn').disabled = false;
+  }
+});
+
+// ---- ③④ Reply Japanese -> Spanish/English ----
+$('translateOutBtn').addEventListener('click', async () => {
+  const text = ($('replyText').value || '').trim();
+  const outStatus = $('outStatus');
+  const resultText = $('resultText');
+  if (!text) {
+    outStatus.textContent = '返信を入力してください';
+    outStatus.style.color = '#e5534b';
+    return;
+  }
+  outStatus.textContent = '翻訳中...';
+  outStatus.style.color = '';
+  $('translateOutBtn').disabled = true;
+  try {
+    const translated = await translate(text, 'ja', targetLang);
+    resultText.textContent = translated;
+    outStatus.textContent = '✓ 翻訳完了';
+    outStatus.className = 'status flash';
+    // auto copy
+    await copyToClipboard(translated);
+    $('copyStatus').textContent = '✓ 自動でコピーしました';
+    $('copyStatus').className = 'status flash';
+  } catch (e) {
+    outStatus.textContent = 'エラー: ' + e.message;
+    outStatus.style.color = '#e5534b';
+  } finally {
+    $('translateOutBtn').disabled = false;
+  }
+});
+
+// ---- Copy button ----
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+$('copyBtn').addEventListener('click', async () => {
+  const text = $('resultText').textContent;
+  if (!text || text.startsWith('（')) return;
+  await copyToClipboard(text);
+  $('copyStatus').textContent = '✓ コピーしました';
+  $('copyStatus').className = 'status flash';
+});
+
+// ---- Screenshot paste + OCR ----
+const dropArea = $('dropArea');
+const imgPreview = $('imgPreview');
+const ocrTextDisplay = $('ocrTextDisplay');
+
+dropArea.addEventListener('paste', async (e) => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) {
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        pastedImageDataUrl = ev.target.result;
+        imgPreview.innerHTML = `<img src="${pastedImageDataUrl}" alt="pasted screenshot">`;
+        ocrTextDisplay.textContent = 'OCR実行中...（数秒かかります）';
+        try {
+          const { data: { text } } = await Tesseract.recognize(pastedImageDataUrl, 'spa+eng');
+          const cleaned = text.trim();
+          ocrTextDisplay.textContent = 'OCR結果: ' + (cleaned || '(文字を検出できませんでした)');
+          if (cleaned) {
+            $('incomingText').value = cleaned;
+          }
+        } catch (err) {
+          ocrTextDisplay.textContent = 'OCRエラー: ' + err.message + '（テキスト貼り付けをご利用ください）';
+        }
+      };
+      reader.readAsDataURL(blob);
+      break;
+    }
+  }
+});
+
+// allow clicking the droparea to focus so paste works
+dropArea.addEventListener('click', () => dropArea.focus());
+</script>
+</body>
+</html>
