@@ -37,7 +37,15 @@
   .droparea.dragover{
     background:var(--panel); border-color:var(--accent); color:var(--text);
   }
-  .droparea img{max-width:100%; border-radius:6px; margin-top:8px; display:block;}
+  .droparea img{max-width:100%; border-radius:6px; display:block;}
+  .img-preview-wrap{position:relative; display:inline-block; max-width:100%; margin-top:8px;}
+  .img-clear-btn{
+    position:absolute; top:-8px; right:-8px; width:24px; height:24px; border-radius:50%;
+    background:var(--danger); color:#fff; border:2px solid var(--panel2); font-size:14px;
+    line-height:1; display:flex; align-items:center; justify-content:center; padding:0;
+    cursor:pointer; font-weight:700;
+  }
+  .img-clear-btn:hover{filter:brightness(1.15);}
   button{
     background:var(--accent); color:#fff; border:none; border-radius:8px;
     padding:10px 16px; font-size:14px; cursor:pointer; font-weight:600;
@@ -244,11 +252,26 @@ const dropArea = $('dropArea');
 const imgPreview = $('imgPreview');
 const ocrTextDisplay = $('ocrTextDisplay');
 
+function clearImagePreview() {
+  pastedImageDataUrl = null;
+  imgPreview.innerHTML = '';
+  ocrTextDisplay.textContent = '';
+  $('fileInput').value = '';
+}
+
 async function processImageBlob(blob) {
   const reader = new FileReader();
   reader.onload = async (ev) => {
     pastedImageDataUrl = ev.target.result;
-    imgPreview.innerHTML = `<img src="${pastedImageDataUrl}" alt="pasted screenshot">`;
+    imgPreview.innerHTML = `
+      <div class="img-preview-wrap">
+        <button type="button" class="img-clear-btn" id="imgClearBtn" title="画像を消す">✕</button>
+        <img src="${pastedImageDataUrl}" alt="pasted screenshot">
+      </div>`;
+    $('imgClearBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearImagePreview();
+    });
     ocrTextDisplay.textContent = 'OCR実行中...（数秒かかります）';
     try {
       const { data: { text } } = await Tesseract.recognize(pastedImageDataUrl, 'spa+eng');
